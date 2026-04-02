@@ -6,7 +6,9 @@ require("dotenv").config();
 const app = express();
 
 app.use(cors({
-  origin: "*",
+  origin: ["https://servizioprimo.com", "https://www.servizioprimo.com"],
+  methods: ["POST", "GET"],
+  allowedHeaders: ["Content-Type"],
 }));
 app.use(express.json());
 
