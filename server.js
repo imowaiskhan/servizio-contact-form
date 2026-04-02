@@ -58,6 +58,9 @@ const transporter = nodemailer.createTransport({
   port: 465,
   secure: true,
   family: 4,
+  connectionTimeout: 10000,
+  greetingTimeout: 10000,
+  socketTimeout: 10000,
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
@@ -65,7 +68,6 @@ const transporter = nodemailer.createTransport({
 });
 
 await transporter.verify();
-console.log("SMTP verified successfully");
 
     await transporter.sendMail({
       from: `"Servizio Primo Website" <${process.env.SMTP_FROM}>`,
