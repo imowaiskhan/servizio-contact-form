@@ -8,18 +8,15 @@ const app = express();
 const allowedOrigins = [
   "https://servizioprimo.com",
   "https://www.servizioprimo.com",
-  "http://localhost:3000", // optional for local testing
+  "http://localhost:3000",
 ];
 
 const corsOptions = {
   origin: function (origin, callback) {
-    // allow requests with no origin like Postman/server-to-server
     if (!origin) return callback(null, true);
-
     if (allowedOrigins.includes(origin)) {
       return callback(null, true);
     }
-
     return callback(new Error(`Not allowed by CORS: ${origin}`));
   },
   methods: ["GET", "POST", "OPTIONS"],
@@ -28,7 +25,6 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 app.options(/.*/, cors(corsOptions));
-
 app.use(express.json());
 
 function isValidEmail(email) {
@@ -40,6 +36,8 @@ app.get("/", (req, res) => {
 });
 
 app.post("/api/contact", async (req, res) => {
+  let transporter;
+  
   try {
     const {
       fname = "",
@@ -72,21 +70,32 @@ app.post("/api/contact", async (req, res) => {
       });
     }
 
-    const transporter = nodemailer.createTransport({
+    // FIX 1: Correct TLS configuration based on port
+    const port = Number(process.env.SMTP_PORT) || 587;
+    const isPort465 = port === 465;
+
+    transporter = nodemailer.createTransport({
       host: process.env.SMTP_HOST,
-      port: Number(process.env.SMTP_PORT) || 587,
-      secure: true,
-      family: 4,
-      connectionTimeout: 10000,
-      greetingTimeout: 10000,
-      socketTimeout: 10000,
+      port: port,
+      secure: isPort465, // true for 465, false for 587
+      family: 4, // Force IPv4
+      requireTLS: !isPort465, // true for 587 (STARTTLS)
+      connectionTimeout: 15000,
+      greetingTimeout: 15000,
+      socketTimeout: 15000,
       auth: {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS,
       },
+      tls: {
+        rejectUnauthorized: true,
+        minVersion: 'TLSv1.2'
+      }
     });
 
+    // Verify connection
     await transporter.verify();
+    console.log("SMTP connection verified successfully");
 
     await transporter.sendMail({
       from: `"Servizio Primo Website" <${process.env.SMTP_FROM}>`,
@@ -113,16 +122,32 @@ app.post("/api/contact", async (req, res) => {
     });
   } catch (error) {
     console.error("CONTACT ERROR:", error);
+    
+    // Better error messages
+    let errorMessage = "Server error while sending email";
+    if (error.code === 'ETIMEDOUT' || error.code === 'ESOCKET') {
+      errorMessage = "Cannot connect to email server. Please check SMTP configuration.";
+    } else if (error.code === 'EAUTH') {
+      errorMessage = "Email authentication failed. Check SMTP credentials.";
+    }
 
     return res.status(500).json({
       success: false,
-      message: "Server error while sending email",
-      error: error.message,
+      message: errorMessage,
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined,
     });
+  } finally {
+    // Close transporter connection
+    if (transporter) {
+      try {
+        await transporter.close();
+      } catch (e) {
+        // Ignore close errors
+      }
+    }
   }
 });
 
-// Optional: handle CORS errors nicely
 app.use((err, req, res, next) => {
   if (err && err.message && err.message.startsWith("Not allowed by CORS")) {
     return res.status(403).json({
@@ -130,7 +155,6 @@ app.use((err, req, res, next) => {
       message: err.message,
     });
   }
-
   return next(err);
 });
 
